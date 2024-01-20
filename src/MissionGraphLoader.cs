@@ -138,71 +138,69 @@ namespace MissionGraphLoader
 	{
 		static bool Prefix(ref BundleManager __instance, AssetBundle bundle, ModInfo fromMod)
 		{
-			if (!fromMod.Dependencies.Contains(MissionGraphLoader.UniqueID))
+			if (fromMod != null && fromMod.Dependencies != null && fromMod.Dependencies.Length > 0 && fromMod.Dependencies.Contains(MissionGraphLoader.UniqueID))
 			{
-				return true;
-			}
-
-			Debug.Log("Processing asset bundle " + bundle.name);
-			BundleManifest manifest = bundle.ReadXMLTextAsset<BundleManifest>("manifest.xml");
-			bool flag = manifest == null;
-			if (flag)
-			{
-				Debug.LogError("Could not process asset bundle.  No manifest found");
-			}
-			else
-			{
-				bool flag2 = !string.IsNullOrEmpty(manifest.ResourceFile);
-				if (flag2)
+				Debug.Log("Processing asset bundle " + bundle.name);
+				BundleManifest manifest = bundle.ReadXMLTextAsset<BundleManifest>("manifest.xml");
+				bool flag = manifest == null;
+				if (flag)
 				{
-					ResourceDefinitions.ResourceFile resources = bundle.ReadXMLTextAsset<ResourceDefinitions.ResourceFile>(manifest.ResourceFile);
-					bool flag3 = resources != null;
-					if (flag3)
+					Debug.LogError("Could not process asset bundle.  No manifest found");
+				}
+				else
+				{
+					bool flag2 = !string.IsNullOrEmpty(manifest.ResourceFile);
+					if (flag2)
 					{
-						ResourceDefinitions.Instance.LoadResources(resources);
+						ResourceDefinitions.ResourceFile resources = bundle.ReadXMLTextAsset<ResourceDefinitions.ResourceFile>(manifest.ResourceFile);
+						bool flag3 = resources != null;
+						if (flag3)
+						{
+							ResourceDefinitions.Instance.LoadResources(resources);
+						}
+						else
+						{
+							Debug.Log("Failed to read resources file '" + manifest.ResourceFile + "'");
+						}
 					}
-					else
-					{
-						Debug.Log("Failed to read resources file '" + manifest.ResourceFile + "'");
-					}
+
+					List<MissionSet> missionSets = (List<MissionSet>)Utilities.GetPrivateField(__instance, "_missionSets");
+
+					MethodInfo method = __instance.GetType().GetMethod("LoadListEntries", BindingFlags.NonPublic | BindingFlags.Instance);
+					MethodInfo generic = method.MakeGenericMethod(typeof(MissionSet));
+					generic.Invoke(__instance, new object[] { manifest, manifest.MissionSets, bundle, missionSets, fromMod });
+
+					// Keep the bundle loaded after the normal function is run, so we can access the missions from it in the postfix
+					//bundle.Unload(false);
 				}
 
-				List<MissionSet> missionSets = (List<MissionSet>)Utilities.GetPrivateField(__instance, "_missionSets");
-
-				MethodInfo method = __instance.GetType().GetMethod("LoadListEntries", BindingFlags.NonPublic | BindingFlags.Instance);
-				MethodInfo generic = method.MakeGenericMethod(typeof(MissionSet));
-				generic.Invoke(__instance, new object[] { manifest, manifest.MissionSets, bundle, missionSets, fromMod });
-
-				// Keep the bundle loaded after the normal function is run, so we can access the missions from it in the postfix
-				//bundle.Unload(false);
+				return false;
 			}
 
-			return false;
+			return true;
 		}
 
 		static void Postfix(ref BundleManager __instance, AssetBundle bundle, ModInfo fromMod)
 		{
-			if (!fromMod.Dependencies.Contains(MissionGraphLoader.UniqueID))
+			if (fromMod != null && fromMod.Dependencies != null && fromMod.Dependencies.Length > 0 && fromMod.Dependencies.Contains(MissionGraphLoader.UniqueID))
 			{
-				return;
+				Debug.Log("MissionGraphLoader - evaluating asset bundle " + bundle.name);
+
+				MissionLoaderManifest missionSettings = bundle.ReadXMLTextAsset<MissionLoaderManifest>("missions.xml");
+
+				if (missionSettings == null)
+				{
+					Debug.Log("MissionGraphLoader - not required for mod " + fromMod.ModName);
+
+					return;
+				}
+
+				LoadMissionNodeGraphs(__instance, bundle, fromMod, missionSettings);
+
+				LoadMissionBattlespaces(__instance, missionSettings);
+
+				MissionGraphLoader.FacilityInsertionTargets.AddRange(missionSettings.MissionsWithStations);
 			}
-
-			Debug.Log("MissionGraphLoader - evaluating asset bundle " + bundle.name);
-
-			MissionLoaderManifest missionSettings = bundle.ReadXMLTextAsset<MissionLoaderManifest>("missions.xml");
-
-			if (missionSettings == null)
-			{
-				Debug.Log("MissionGraphLoader - not required for mod " + fromMod.ModName);
-
-				return;
-			}
-
-			LoadMissionNodeGraphs(__instance, bundle, fromMod, missionSettings);
-
-			LoadMissionBattlespaces(__instance, missionSettings);
-
-			MissionGraphLoader.FacilityInsertionTargets.AddRange(missionSettings.MissionsWithStations);
 		}
 
 		private static void LoadMissionNodeGraphs(BundleManager __instance, AssetBundle bundle, ModInfo fromMod, MissionLoaderManifest missionSettings)
