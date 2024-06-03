@@ -16,6 +16,10 @@ using TMPro;
 using UI;
 using Utility;
 using XNode;
+using System;
+using Networking;
+using Cameras;
+using Game.UI.Chessboard;
 
 namespace MissionGraphLoader
 {
@@ -24,6 +28,7 @@ namespace MissionGraphLoader
 		public static ulong UniqueID = 0;
 		public static GameObject FacilityPrefab = null;
 		public static List<string> FacilityInsertionTargets = new List<string>();
+		public static Dictionary<string, ISkirmishBattlespaceInfo> BattlespaceMappings = new Dictionary<string, ISkirmishBattlespaceInfo>();
 
 		public void PreLoad()
 		{
@@ -197,7 +202,11 @@ namespace MissionGraphLoader
 
 				LoadMissionNodeGraphs(__instance, bundle, fromMod, missionSettings);
 
-				LoadMissionBattlespaces(__instance, missionSettings);
+				List<ISkirmishBattlespaceInfo> battlespaces = __instance.AllMaps.ToList();
+				foreach (MissionLoaderManifest.MissionBattlespaceEntry entry in missionSettings.MissionBattlespaceMappings)
+				{
+					MissionGraphLoader.BattlespaceMappings.Add(entry.MissionName, battlespaces.Find(x => x.MapName == entry.BattlespaceName));
+				}
 
 				MissionGraphLoader.FacilityInsertionTargets.AddRange(missionSettings.MissionsWithStations);
 			}
@@ -259,49 +268,6 @@ namespace MissionGraphLoader
 				}
 			}
 		}
-
-		private static void LoadMissionBattlespaces(BundleManager __instance, MissionLoaderManifest missionSettings)
-		{
-			Debug.Log("MissionGraphLoader - battlespace mappings found: " + missionSettings.MissionBattlespaceMappings.Count);
-
-			List<Battlespace> battlespaces = __instance.AllMaps.ToList();
-
-			Debug.Log("MissionGraphLoader - battlespaces found: " + battlespaces.Count);
-
-			foreach (MissionLoaderManifest.MissionBattlespaceEntry mapping in missionSettings.MissionBattlespaceMappings)
-			{
-				Battlespace targetBattlespace = battlespaces.Find(x => x.MapName == mapping.BattlespaceName);
-
-				Debug.Log("MissionGraphLoader - found map '" + mapping.BattlespaceName + "': " + targetBattlespace != null);
-
-				foreach (MissionSet missionSet in __instance.MissionSets)
-				{
-					Debug.Log("MissionGraphLoader - iterating MissionSet: " + missionSet.CampaignName);
-
-					foreach (Mission mission in missionSet.Missions)
-					{
-						Debug.Log("MissionGraphLoader - iterating Mission: " + mission.MissionName);
-
-						if (mission.MissionName == mapping.MissionName)
-						{
-							MissionStartNode startNode = mission.Graph.nodes.FirstOrDefault((Node x) => x is MissionStartNode) as MissionStartNode;
-
-							if (startNode != null)
-							{
-								startNode.MapGeo = targetBattlespace;
-
-								Debug.Log("MissionGraphLoader - assigned battlespace to mission: " + (startNode.MapGeo != null));
-								break;
-							}
-                            else
-							{
-								Debug.Log("MissionGraphLoader: Found mission to apply battlespace to, but the mission's graph does not have a StartNode");
-							}
-                        }
-					}
-				}
-			}
-		}
 	}
 
 	// Additional logging to make developing and debugging mission graphs easier
@@ -348,6 +314,89 @@ namespace MissionGraphLoader
 			Debug.Log("Proceeding to execute following node " + next.name);
 
 			return true;
+		}
+	}
+
+	// Reimplementation of this function to retrieve battlespaces from storage and load them for custom missions which cannot define battlespaces normally
+	[HarmonyPatch(typeof(SkirmishGameManager), "StateLoadingMap")]
+	class Patch_SkirmishGameManager_StateLoadingMap
+	{
+		static bool Prefix(ref SkirmishGameManager __instance)
+		{
+			LoadMapMessage? loadMapInstructions = (LoadMapMessage?)Utilities.GetPrivateField(__instance, "_loadMapInstructions");
+			Mission mission = (Mission)Utilities.GetPrivateField(__instance, "_mission");
+
+			bool flag = loadMapInstructions != null && (__instance.LocalPlayer != null || __instance.IsDedicatedServer);
+			if (flag)
+			{
+				bool loadFromMission = loadMapInstructions.Value.LoadFromMission;
+				if (loadFromMission)
+				{
+					ISkirmishBattlespaceInfo mapInfo = mission.Graph.GetMapToLoad();
+					if (mapInfo == null)
+                    {
+						MissionGraphLoader.BattlespaceMappings.TryGetValue(mission.MissionName, out mapInfo);
+						Debug.Log("Could not find map in mission, falling back on configured map " + mapInfo.MapName);
+					}
+					Utilities.SetPrivateField(__instance, "_loadedMapInfo", mapInfo);
+				}
+				else
+				{
+					Utilities.SetPrivateField(__instance, "_loadedMapInfo", BundleManager.Instance.GetMap(loadMapInstructions.Value.LoadKey));
+				}
+				Utilities.SetPrivateField(__instance, "_loadMapInstructions", null);
+
+				ISkirmishBattlespaceInfo loadedMapInfo = (ISkirmishBattlespaceInfo)Utilities.GetPrivateField(__instance, "_loadedMapInfo");
+				bool flag2 = loadedMapInfo == null;
+				if (flag2)
+				{
+					Debug.LogError("Could not find map to load");
+					__instance.Shutdown(true);
+				}
+
+				SkirmishGameManager instance = __instance;
+
+				Transform levelGeoRoot = (Transform)Utilities.GetPrivateField(__instance, "_levelGeoRoot");
+				loadedMapInfo.InstantiateMap(levelGeoRoot).Done(delegate (Battlespace map)
+				{
+					Debug.Log("Map instantiation completed");
+					Utilities.SetPrivateField(instance, "_loadedMap", map);
+
+					MissionStartNode startNode = mission.Graph.nodes.FirstOrDefault((Node x) => x is MissionStartNode) as MissionStartNode;
+					if (startNode != null)
+					{
+						startNode.MapGeo = map;
+						Debug.Log("Inserted map into mission");
+					}
+
+					Battlespace loadedMap = (Battlespace)Utilities.GetPrivateField(instance, "_loadedMap");
+					GameObject defaultLighting = (GameObject)Utilities.GetPrivateField(instance, "_defaultLighting");
+					SpacePartitioner spacePartition = (SpacePartitioner)Utilities.GetPrivateField(instance, "_spacePartition");
+					ChessboardManager chessboard = (ChessboardManager)Utilities.GetPrivateField(instance, "_chessboard");
+					ImprovedOrbitCamera cameraRig = (ImprovedOrbitCamera)Utilities.GetPrivateField(instance, "_cameraRig");
+
+					bool hasLighting = loadedMap.HasLighting;
+					if (hasLighting)
+					{
+						UnityEngine.Object.Destroy(defaultLighting);
+					}
+					instance.ApplyNormalSkybox();
+					spacePartition.Build(loadedMap);
+					chessboard.SetMapRadius(loadedMap.Radius);
+					cameraRig.OverideModeMaxZoom(1, new float?(loadedMap.Radius * 3f));
+					bool flag3 = instance.SkirmishLocalPlayer != null;
+					if (flag3)
+					{
+						instance.SkirmishLocalPlayer.MarkMapLoaded();
+					}
+				}, delegate (Exception exception)
+				{
+					Debug.LogError("InstantiateMap call failed: " + ((exception != null) ? exception.ToString() : null));
+					instance.Shutdown(true);
+				});
+			}
+
+			return false;
 		}
 	}
 

@@ -34,7 +34,13 @@
       <HintPath>lib\MonoMod.Utils.dll</HintPath>
     </Reference>
     <Reference Include="Nebulous">
-      <HintPath>..\..\..\..\..\..\..\Program Files (x86)\Steam\steamapps\common\Nebulous\Nebulous_Data\Managed\Nebulous.dll</HintPath>
+      <HintPath>..\..\..\..\..\..\Program Files (x86)\Steam\steamapps\common\Nebulous\Nebulous_Data\Managed\Nebulous.dll</HintPath>
+    </Reference>
+    <Reference Include="RSG.Promise">
+      <HintPath>..\..\..\..\..\..\Program Files (x86)\Steam\steamapps\common\Nebulous\Nebulous_Data\Managed\RSG.Promise.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.Addressables">
+      <HintPath>..\..\..\..\..\..\Program Files (x86)\Steam\steamapps\common\Nebulous\Nebulous_Data\Managed\Unity.Addressables.dll</HintPath>
     </Reference>
     <Reference Include="Unity.TextMeshPro">
       <HintPath>..\..\..\..\..\..\..\Program Files (x86)\Steam\steamapps\common\Nebulous\Nebulous_Data\Managed\Unity.TextMeshPro.dll</HintPath>
