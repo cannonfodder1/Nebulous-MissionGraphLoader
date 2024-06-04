@@ -23,7 +23,7 @@ using Game.UI.Chessboard;
 
 namespace MissionGraphLoader
 {
-    public class MissionGraphLoader : IModEntryPoint
+	public class MissionGraphLoader : IModEntryPoint
 	{
 		public static ulong UniqueID = 0;
 		public static GameObject FacilityPrefab = null;
@@ -42,14 +42,15 @@ namespace MissionGraphLoader
 			bool loadedSelf = false;
 
 			foreach (ModRecord mod in ModDatabase.Instance.MarkedForLoad)
-            {
+			{
 				if (mod.Info.ModName == "Mission Graph Loader")
-                {
+				{
 					MissionGraphLoader.UniqueID = mod.Info.UniqueIdentifier;
+					//Debug.LogError(UniqueID);
 					loadedSelf = true;
 					break;
-                }
-            }
+				}
+			}
 
 			if (!loadedSelf)
 			{
@@ -61,13 +62,13 @@ namespace MissionGraphLoader
 
 			ScenarioGraph stationCapture = null;
 			foreach (ScenarioGraph scenario in BundleManager.Instance.AllScenarios)
-            {
+			{
 				if (scenario.ScenarioName == "Station Capture")
-                {
+				{
 					stationCapture = scenario;
 					break;
-                }
-            }
+				}
+			}
 			if (stationCapture == null)
 			{
 				Debug.LogError("MissionGraphLoader: Could not find ScenarioGraph by the name of Station Capture");
@@ -238,9 +239,9 @@ namespace MissionGraphLoader
 			Debug.Log("MissionGraphLoader - nodegraphs found: " + missionGraphs.Count);
 
 			if (missionGraphs.Count == 0)
-            {
+			{
 				return;
-            }
+			}
 
 			foreach (MissionSet missionSet in __instance.MissionSets)
 			{
@@ -299,7 +300,7 @@ namespace MissionGraphLoader
 
 			NodePort connection = port.Connection;
 			if (connection == null)
-            {
+			{
 				Debug.Log("Failed to find valid connection");
 				return true;
 			}
@@ -326,15 +327,18 @@ namespace MissionGraphLoader
 			LoadMapMessage? loadMapInstructions = (LoadMapMessage?)Utilities.GetPrivateField(__instance, "_loadMapInstructions");
 			Mission mission = (Mission)Utilities.GetPrivateField(__instance, "_mission");
 
-			bool flag = loadMapInstructions != null && (__instance.LocalPlayer != null || __instance.IsDedicatedServer);
-			if (flag)
+			if (loadMapInstructions == null || loadMapInstructions.Value.LoadFromMission == false)
 			{
-				bool loadFromMission = loadMapInstructions.Value.LoadFromMission;
-				if (loadFromMission)
+				return true;
+			}
+
+			if (loadMapInstructions != null && (__instance.LocalPlayer != null || __instance.IsDedicatedServer))
+			{
+				if (loadMapInstructions.Value.LoadFromMission)
 				{
 					ISkirmishBattlespaceInfo mapInfo = mission.Graph.GetMapToLoad();
 					if (mapInfo == null)
-                    {
+					{
 						MissionGraphLoader.BattlespaceMappings.TryGetValue(mission.MissionName, out mapInfo);
 						Debug.Log("Could not find map in mission, falling back on configured map " + mapInfo.MapName);
 					}
@@ -387,7 +391,7 @@ namespace MissionGraphLoader
 					bool flag3 = instance.SkirmishLocalPlayer != null;
 					if (flag3)
 					{
-						instance.SkirmishLocalPlayer.MarkMapLoaded();
+						instance.SkirmishLocalPlayer.ReportMapLoaded();
 					}
 				}, delegate (Exception exception)
 				{
@@ -423,11 +427,11 @@ namespace MissionGraphLoader
 			foreach (TextMeshProUGUI text in submenu.GetComponentsInChildren<TextMeshProUGUI>())
 			{
 				if (text.text == "Campaign/Tutorial")
-                {
+				{
 					text.text = "Campaign";
 
 					return;
-                }
+				}
 			}
 		}
 	}
